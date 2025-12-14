@@ -62,7 +62,7 @@ function buildRequesterConfig(headers, body = null) {
 async function handleApiError(error, token) {
   const status = error.response?.status || error.status || 'Unknown';
   let errorBody = error.message;
-  
+
   if (error.response?.data?.readable) {
     const chunks = [];
     for await (const chunk of error.response.data) {
@@ -74,15 +74,21 @@ async function handleApiError(error, token) {
   } else if (error.response?.data) {
     errorBody = error.response.data;
   }
-  
+
   if (status === 403) {
-    if (JSON.stringify(errorBody).includes("The caller does not")){
+    if (JSON.stringify(errorBody).includes("The caller does not")) {
       throw new Error(`超出模型最大上下文。错误详情: ${errorBody}`);
     }
     tokenManager.disableCurrentToken(token);
     throw new Error(`该账号没有使用权限，已自动禁用。错误详情: ${errorBody}`);
   }
-  
+
+  if (status === 429) {
+    const duration = config.security?.rateLimit?.suspendDuration || 3600000;
+    tokenManager.suspendToken(token, duration);
+    throw new Error(`请求过于频繁 (429)，该账号已暂停使用 ${duration / 60000} 分钟。详情: ${JSON.stringify(errorBody)}`);
+  }
+
   throw new Error(`API请求失败 (${status}): ${errorBody}`);
 }
 
@@ -101,12 +107,12 @@ function convertToToolCall(functionCall) {
 // 解析并发送流式响应片段（会修改 state 并触发 callback）
 function parseAndEmitStreamChunk(line, state, callback) {
   if (!line.startsWith('data: ')) return;
-  
+
   try {
     const data = JSON.parse(line.slice(6));
     //console.log(JSON.stringify(data));
     const parts = data.response?.candidates?.[0]?.content?.parts;
-    
+
     if (parts) {
       for (const part of parts) {
         if (part.thought === true) {
@@ -129,7 +135,7 @@ function parseAndEmitStreamChunk(line, state, callback) {
         }
       }
     }
-    
+
     // 响应结束时发送工具调用和使用统计
     if (data.response?.candidates?.[0]?.finishReason) {
       if (state.thinkingStarted) {
@@ -143,8 +149,8 @@ function parseAndEmitStreamChunk(line, state, callback) {
       // 提取 token 使用统计
       const usage = data.response?.usageMetadata;
       if (usage) {
-        callback({ 
-          type: 'usage', 
+        callback({
+          type: 'usage',
           usage: {
             prompt_tokens: usage.promptTokenCount || 0,
             completion_tokens: usage.candidatesTokenCount || 0,
@@ -161,23 +167,23 @@ function parseAndEmitStreamChunk(line, state, callback) {
 // ==================== 导出函数 ====================
 
 export async function generateAssistantResponse(requestBody, token, callback) {
-  
+
   const headers = buildHeaders(token);
   const state = { thinkingStarted: false, toolCalls: [] };
   let buffer = ''; // 缓冲区：处理跨 chunk 的不完整行
-  
+
   const processChunk = (chunk) => {
     buffer += chunk;
     const lines = buffer.split('\n');
     buffer = lines.pop(); // 保留最后一行（可能不完整）
     lines.forEach(line => parseAndEmitStreamChunk(line, state, callback));
   };
-  
+
   if (useAxios) {
     try {
       const axiosConfig = { ...buildAxiosConfig(config.api.url, headers, requestBody), responseType: 'stream' };
       const response = await axios(axiosConfig);
-      
+
       response.data.on('data', chunk => processChunk(chunk.toString()));
       await new Promise((resolve, reject) => {
         response.data.on('end', resolve);
@@ -208,9 +214,9 @@ export async function generateAssistantResponse(requestBody, token, callback) {
 export async function getAvailableModels() {
   const token = await tokenManager.getToken();
   if (!token) throw new Error('没有可用的token，请运行 npm run login 获取token');
-  
+
   const headers = buildHeaders(token);
-  
+
   try {
     let data;
     if (useAxios) {
@@ -225,18 +231,18 @@ export async function getAvailableModels() {
     }
     //console.log(JSON.stringify(data,null,2));
     const modelList = Object.keys(data.models).map(id => ({
-        id,
-        object: 'model',
-        created: Math.floor(Date.now() / 1000),
-        owned_by: 'google'
-      }));
+      id,
+      object: 'model',
+      created: Math.floor(Date.now() / 1000),
+      owned_by: 'google'
+    }));
     modelList.push({
       id: "claude-opus-4-5",
       object: 'model',
       created: Math.floor(Date.now() / 1000),
       owned_by: 'google'
     })
-    
+
     return {
       object: 'list',
       data: modelList
@@ -248,7 +254,7 @@ export async function getAvailableModels() {
 
 export async function getModelsWithQuotas(token) {
   const headers = buildHeaders(token);
-  
+
   try {
     let data;
     if (useAxios) {
@@ -261,7 +267,7 @@ export async function getModelsWithQuotas(token) {
       }
       data = await response.json();
     }
-    
+
     const quotas = {};
     Object.entries(data.models || {}).forEach(([modelId, modelData]) => {
       if (modelData.quotaInfo) {
@@ -271,7 +277,7 @@ export async function getModelsWithQuotas(token) {
         };
       }
     });
-    
+
     return quotas;
   } catch (error) {
     await handleApiError(error, token);
@@ -279,10 +285,10 @@ export async function getModelsWithQuotas(token) {
 }
 
 export async function generateAssistantResponseNoStream(requestBody, token) {
-  
+
   const headers = buildHeaders(token);
   let data;
-  
+
   try {
     if (useAxios) {
       data = (await axios(buildAxiosConfig(config.api.noStreamUrl, headers, requestBody))).data;
@@ -304,7 +310,7 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
   let thinkingContent = '';
   const toolCalls = [];
   const imageUrls = [];
-  
+
   for (const part of parts) {
     if (part.thought === true) {
       thinkingContent += part.text || '';
@@ -318,12 +324,12 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
       imageUrls.push(imageUrl);
     }
   }
-  
+
   // 拼接思维链标签
   if (thinkingContent) {
     content = `<think>\n${thinkingContent}\n</think>\n${content}`;
   }
-  
+
   // 提取 token 使用统计
   const usage = data.response?.usageMetadata;
   const usageData = usage ? {
@@ -331,14 +337,14 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
     completion_tokens: usage.candidatesTokenCount || 0,
     total_tokens: usage.totalTokenCount || 0
   } : null;
-  
+
   // 生图模型：转换为 markdown 格式
   if (imageUrls.length > 0) {
     let markdown = content ? content + '\n\n' : '';
     markdown += imageUrls.map(url => `![image](${url})`).join('\n\n');
     return { content: markdown, toolCalls, usage: usageData };
   }
-  
+
   return { content, toolCalls, usage: usageData };
 }
 
@@ -346,7 +352,7 @@ export async function generateImageForSD(requestBody, token) {
   const headers = buildHeaders(token);
   let data;
   //console.log(JSON.stringify(requestBody,null,2));
-  
+
   try {
     if (useAxios) {
       data = (await axios(buildAxiosConfig(config.api.noStreamUrl, headers, requestBody))).data;
@@ -361,10 +367,10 @@ export async function generateImageForSD(requestBody, token) {
   } catch (error) {
     await handleApiError(error, token);
   }
-  
+
   const parts = data.response?.candidates?.[0]?.content?.parts || [];
   const images = parts.filter(p => p.inlineData).map(p => p.inlineData.data);
-  
+
   return images;
 }
 

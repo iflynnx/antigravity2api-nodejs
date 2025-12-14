@@ -4,6 +4,14 @@
     "host": "0.0.0.0",
     "maxRequestSize": "500mb"
   },
+  "security": {
+    "rateLimit": {
+      "enabled": false,
+      "maxRequestsPerMinute": 60,
+      "maxRequestsPerDay": 1000,
+      "suspendDuration": 3600000
+    }
+  },
   "api": {
     "url": "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
     "modelsUrl": "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels",

@@ -6,12 +6,13 @@ import { log } from '../utils/logger.js';
 import { generateSessionId, generateProjectId } from '../utils/idGenerator.js';
 import config from '../config/config.js';
 import { OAUTH_CONFIG } from '../constants/oauth.js';
+import rateLimiter from './rate_limiter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 class TokenManager {
-  constructor(filePath = path.join(__dirname,'..','..','data' ,'accounts.json')) {
+  constructor(filePath = path.join(__dirname, '..', '..', 'data', 'accounts.json')) {
     this.filePath = filePath;
     this.tokens = [];
     this.currentIndex = 0;
@@ -35,12 +36,13 @@ class TokenManager {
       log.info('正在初始化token管理器...');
       const data = fs.readFileSync(this.filePath, 'utf8');
       let tokenArray = JSON.parse(data);
-      
+
       this.tokens = tokenArray.filter(token => token.enable !== false).map(token => ({
         ...token,
-        sessionId: generateSessionId()
+        sessionId: generateSessionId(),
+        suspend_until: token.suspend_until || 0
       }));
-      
+
       this.currentIndex = 0;
       if (this.tokens.length === 0) {
         log.warn('⚠ 暂无可用账号，请使用以下方式添加：');
@@ -123,7 +125,7 @@ class TokenManager {
     try {
       const data = fs.readFileSync(this.filePath, 'utf8');
       const allTokens = JSON.parse(data);
-      
+
       // 如果指定了要更新的token，直接更新它
       if (tokenToUpdate) {
         const index = allTokens.findIndex(t => t.refresh_token === tokenToUpdate.refresh_token);
@@ -136,16 +138,34 @@ class TokenManager {
         this.tokens.forEach(memToken => {
           const index = allTokens.findIndex(t => t.refresh_token === memToken.refresh_token);
           if (index !== -1) {
-            const { sessionId, ...tokenToSave } = memToken;
+            const { sessionId, suspend_until, ...tokenToSave } = memToken;
+            if (suspend_until > Date.now()) {
+              tokenToSave.suspend_until = suspend_until;
+            }
             allTokens[index] = tokenToSave;
           }
         });
       }
-      
+
       fs.writeFileSync(this.filePath, JSON.stringify(allTokens, null, 2), 'utf8');
     } catch (error) {
       log.error('保存文件失败:', error.message);
     }
+  }
+
+  suspendToken(token, duration = 3600000) {
+    // 默认冷冻1小时
+    const suspendUntil = Date.now() + duration;
+    token.suspend_until = suspendUntil;
+
+    // 更新内存
+    const found = this.tokens.find(t => t.refresh_token === token.refresh_token);
+    if (found) {
+      found.suspend_until = suspendUntil;
+    }
+
+    this.saveToFile(token);
+    log.warn(`Token ...${token.access_token.slice(-8)} 已暂时冷冻至 ${new Date(suspendUntil).toLocaleString()} (429 Too Many Requests)`);
   }
 
   disableToken(token) {
@@ -159,12 +179,24 @@ class TokenManager {
   async getToken() {
     if (this.tokens.length === 0) return null;
 
-    //const startIndex = this.currentIndex;
     const totalTokens = this.tokens.length;
 
     for (let i = 0; i < totalTokens; i++) {
       const token = this.tokens[this.currentIndex];
-      
+
+      // 检查是否被冷冻
+      if (token.suspend_until && token.suspend_until > Date.now()) {
+        // log.debug(`...${token.access_token.slice(-8)} 处于冷冻状态，跳过`);
+        this.currentIndex = (this.currentIndex + 1) % this.tokens.length;
+        continue;
+      }
+
+      // 检查限流状态
+      if (!rateLimiter.checkLimit(token)) {
+        this.currentIndex = (this.currentIndex + 1) % this.tokens.length;
+        continue;
+      }
+
       try {
         if (this.isExpired(token)) {
           await this.refreshToken(token);
@@ -192,6 +224,10 @@ class TokenManager {
             }
           }
         }
+
+        // 成功获取可用 Token，增加计数
+        rateLimiter.incrementUsage(token);
+
         this.currentIndex = (this.currentIndex + 1) % this.tokens.length;
         return token;
       } catch (error) {
@@ -227,7 +263,7 @@ class TokenManager {
       this.ensureFileExists();
       const data = fs.readFileSync(this.filePath, 'utf8');
       const allTokens = JSON.parse(data);
-      
+
       const newToken = {
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token,
@@ -235,17 +271,17 @@ class TokenManager {
         timestamp: tokenData.timestamp || Date.now(),
         enable: tokenData.enable !== undefined ? tokenData.enable : true
       };
-      
+
       if (tokenData.projectId) {
         newToken.projectId = tokenData.projectId;
       }
       if (tokenData.email) {
         newToken.email = tokenData.email;
       }
-      
+
       allTokens.push(newToken);
       fs.writeFileSync(this.filePath, JSON.stringify(allTokens, null, 2), 'utf8');
-      
+
       this.reload();
       return { success: true, message: 'Token添加成功' };
     } catch (error) {
@@ -259,15 +295,15 @@ class TokenManager {
       this.ensureFileExists();
       const data = fs.readFileSync(this.filePath, 'utf8');
       const allTokens = JSON.parse(data);
-      
+
       const index = allTokens.findIndex(t => t.refresh_token === refreshToken);
       if (index === -1) {
         return { success: false, message: 'Token不存在' };
       }
-      
+
       allTokens[index] = { ...allTokens[index], ...updates };
       fs.writeFileSync(this.filePath, JSON.stringify(allTokens, null, 2), 'utf8');
-      
+
       this.reload();
       return { success: true, message: 'Token更新成功' };
     } catch (error) {
@@ -281,14 +317,14 @@ class TokenManager {
       this.ensureFileExists();
       const data = fs.readFileSync(this.filePath, 'utf8');
       const allTokens = JSON.parse(data);
-      
+
       const filteredTokens = allTokens.filter(t => t.refresh_token !== refreshToken);
       if (filteredTokens.length === allTokens.length) {
         return { success: false, message: 'Token不存在' };
       }
-      
+
       fs.writeFileSync(this.filePath, JSON.stringify(filteredTokens, null, 2), 'utf8');
-      
+
       this.reload();
       return { success: true, message: 'Token删除成功' };
     } catch (error) {
@@ -302,7 +338,7 @@ class TokenManager {
       this.ensureFileExists();
       const data = fs.readFileSync(this.filePath, 'utf8');
       const allTokens = JSON.parse(data);
-      
+
       return allTokens.map(token => ({
         refresh_token: token.refresh_token,
         access_token: token.access_token,
@@ -319,5 +355,6 @@ class TokenManager {
     }
   }
 }
+
 const tokenManager = new TokenManager();
 export default tokenManager;

@@ -82,22 +82,22 @@ document.getElementById('login').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector('button[type="submit"]');
     if (btn.disabled) return;
-    
+
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
-    
+
     btn.disabled = true;
     btn.classList.add('loading');
     const originalText = btn.textContent;
     btn.textContent = '登录中';
-    
+
     try {
         const response = await fetch('/admin/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
         });
-        
+
         const data = await response.json();
         if (data.success) {
             authToken = data.token;
@@ -196,20 +196,20 @@ async function processOAuthCallbackModal() {
         showToast('请输入回调URL', 'warning');
         return;
     }
-    
+
     showLoading('正在处理授权...');
-    
+
     try {
         const url = new URL(callbackUrl);
         const code = url.searchParams.get('code');
         const port = new URL(url.origin).port || (url.protocol === 'https:' ? 443 : 80);
-        
+
         if (!code) {
             hideLoading();
             showToast('URL中未找到授权码，请检查URL是否完整', 'error');
             return;
         }
-        
+
         const response = await authFetch('/admin/oauth/exchange', {
             method: 'POST',
             headers: {
@@ -218,7 +218,7 @@ async function processOAuthCallbackModal() {
             },
             body: JSON.stringify({ code, port })
         });
-        
+
         const result = await response.json();
         if (result.success) {
             const account = result.data;
@@ -230,7 +230,7 @@ async function processOAuthCallbackModal() {
                 },
                 body: JSON.stringify(account)
             });
-            
+
             const addResult = await addResponse.json();
             hideLoading();
             if (addResult.success) {
@@ -255,12 +255,12 @@ async function addTokenFromModal() {
     const accessToken = document.getElementById('modalAccessToken').value.trim();
     const refreshToken = document.getElementById('modalRefreshToken').value.trim();
     const expiresIn = parseInt(document.getElementById('modalExpiresIn').value);
-    
+
     if (!accessToken || !refreshToken) {
         showToast('请填写完整的Token信息', 'warning');
         return;
     }
-    
+
     showLoading('正在添加Token...');
     try {
         const response = await authFetch('/admin/tokens', {
@@ -271,7 +271,7 @@ async function addTokenFromModal() {
             },
             body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken, expires_in: expiresIn })
         });
-        
+
         const data = await response.json();
         hideLoading();
         if (data.success) {
@@ -295,7 +295,7 @@ function showMainContent() {
 function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     event.target.classList.add('active');
-    
+
     if (tab === 'tokens') {
         document.getElementById('tokensPage').classList.remove('hidden');
         document.getElementById('settingsPage').classList.add('hidden');
@@ -316,7 +316,7 @@ function silentLogout() {
 async function logout() {
     const confirmed = await showConfirm('确定要退出登录吗？', '退出确认');
     if (!confirmed) return;
-    
+
     silentLogout();
     showToast('已退出登录', 'info');
 }
@@ -326,7 +326,7 @@ async function loadTokens() {
         const response = await authFetch('/admin/tokens', {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
-        
+
         const data = await response.json();
         if (data.success) {
             renderTokens(data.data);
@@ -342,7 +342,7 @@ function renderTokens(tokens) {
     document.getElementById('totalTokens').textContent = tokens.length;
     document.getElementById('enabledTokens').textContent = tokens.filter(t => t.enable).length;
     document.getElementById('disabledTokens').textContent = tokens.filter(t => !t.enable).length;
-    
+
     const tokenList = document.getElementById('tokenList');
     if (tokens.length === 0) {
         tokenList.innerHTML = `
@@ -354,7 +354,7 @@ function renderTokens(tokens) {
         `;
         return;
     }
-    
+
     tokenList.innerHTML = tokens.map(token => `
         <div class="token-card">
             <div class="token-header">
@@ -378,7 +378,7 @@ function renderTokens(tokens) {
                 </div>
                 <div class="info-row">
                     <span class="info-label">⏰ 过期</span>
-                    <span class="info-value">${new Date(token.timestamp + token.expires_in * 1000).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}</span>
+                    <span class="info-value">${new Date(token.timestamp + token.expires_in * 1000).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
             </div>
             <div class="token-actions">
@@ -396,7 +396,7 @@ async function toggleToken(refreshToken, enable) {
     const action = enable ? '启用' : '禁用';
     const confirmed = await showConfirm(`确定要${action}这个Token吗？`, `${action}确认`);
     if (!confirmed) return;
-    
+
     showLoading(`正在${action}Token...`);
     try {
         const response = await authFetch(`/admin/tokens/${encodeURIComponent(refreshToken)}`, {
@@ -407,7 +407,7 @@ async function toggleToken(refreshToken, enable) {
             },
             body: JSON.stringify({ enable })
         });
-        
+
         const data = await response.json();
         hideLoading();
         if (data.success) {
@@ -425,14 +425,14 @@ async function toggleToken(refreshToken, enable) {
 async function deleteToken(refreshToken) {
     const confirmed = await showConfirm('删除后无法恢复，确定要删除这个Token吗？', '⚠️ 删除确认');
     if (!confirmed) return;
-    
+
     showLoading('正在删除Token...');
     try {
         const response = await authFetch(`/admin/tokens/${encodeURIComponent(refreshToken)}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
-        
+
         const data = await response.json();
         hideLoading();
         if (data.success) {
@@ -464,43 +464,43 @@ async function showQuotaModal(refreshToken) {
     `;
     document.body.appendChild(modal);
     modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-    
+
     await loadQuotaData(refreshToken);
 }
 
 async function loadQuotaData(refreshToken, forceRefresh = false) {
     const quotaContent = document.getElementById('quotaContent');
     if (!quotaContent) return;
-    
+
     const refreshBtn = document.querySelector('.modal-content .btn-info');
     if (refreshBtn) {
         refreshBtn.disabled = true;
         refreshBtn.textContent = '⏳ 加载中...';
     }
-    
+
     quotaContent.innerHTML = '<div class="quota-loading">加载中...</div>';
-    
+
     try {
         const url = `/admin/tokens/${encodeURIComponent(refreshToken)}/quotas${forceRefresh ? '?refresh=true' : ''}`;
         const response = await fetch(url, {
             headers: { 'Authorization': `Bearer ${authToken}` }
         });
-        
+
         const data = await response.json();
-        
+
         if (data.success) {
             const quotaData = data.data;
             const models = quotaData.models;
-            
+
             if (Object.keys(models).length === 0) {
                 quotaContent.innerHTML = '<div class="quota-empty">暂无额度信息</div>';
                 return;
             }
-            
+
             const lastUpdated = new Date(quotaData.lastUpdated).toLocaleString('zh-CN', {
                 month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
             });
-            
+
             // 按模型类型分组
             const grouped = { claude: [], gemini: [], other: [] };
             Object.entries(models).forEach(([modelId, quota]) => {
@@ -509,9 +509,9 @@ async function loadQuotaData(refreshToken, forceRefresh = false) {
                 else if (modelId.toLowerCase().includes('gemini')) grouped.gemini.push(item);
                 else grouped.other.push(item);
             });
-            
+
             let html = `<div class="quota-header">更新于 ${lastUpdated}</div>`;
-            
+
             // 渲染各组
             if (grouped.claude.length > 0) {
                 html += '<div class="quota-group-title">🤖 Claude 模型</div>';
@@ -530,7 +530,7 @@ async function loadQuotaData(refreshToken, forceRefresh = false) {
                     `;
                 });
             }
-            
+
             if (grouped.gemini.length > 0) {
                 html += '<div class="quota-group-title">💎 Gemini 模型</div>';
                 grouped.gemini.forEach(({ modelId, quota }) => {
@@ -548,7 +548,7 @@ async function loadQuotaData(refreshToken, forceRefresh = false) {
                     `;
                 });
             }
-            
+
             if (grouped.other.length > 0) {
                 html += '<div class="quota-group-title">🔧 其他模型</div>';
                 grouped.other.forEach(({ modelId, quota }) => {
@@ -566,7 +566,7 @@ async function loadQuotaData(refreshToken, forceRefresh = false) {
                     `;
                 });
             }
-            
+
             quotaContent.innerHTML = html;
         } else {
             quotaContent.innerHTML = `<div class="quota-error">加载失败: ${data.message}</div>`;
@@ -596,13 +596,13 @@ async function loadConfig() {
         if (data.success) {
             const form = document.getElementById('configForm');
             const { env, json } = data.data;
-            
+
             // 加载 .env 配置
             Object.entries(env).forEach(([key, value]) => {
                 const input = form.elements[key];
                 if (input) input.value = value || '';
             });
-            
+
             // 加载 config.json 配置
             if (json.server) {
                 if (form.elements['PORT']) form.elements['PORT'].value = json.server.port || '';
@@ -621,6 +621,12 @@ async function loadConfig() {
                 if (form.elements['USE_NATIVE_AXIOS']) form.elements['USE_NATIVE_AXIOS'].value = json.other.useNativeAxios ? 'true' : 'false';
                 if (form.elements['SKIP_PROJECT_ID_FETCH']) form.elements['SKIP_PROJECT_ID_FETCH'].value = json.other.skipProjectIdFetch ? 'true' : 'false';
             }
+            if (json.security && json.security.rateLimit) {
+                if (form.elements['security.rateLimit.enabled']) form.elements['security.rateLimit.enabled'].value = json.security.rateLimit.enabled ? 'true' : 'false';
+                if (form.elements['security.rateLimit.maxRequestsPerMinute']) form.elements['security.rateLimit.maxRequestsPerMinute'].value = json.security.rateLimit.maxRequestsPerMinute ?? '';
+                if (form.elements['security.rateLimit.maxRequestsPerDay']) form.elements['security.rateLimit.maxRequestsPerDay'].value = json.security.rateLimit.maxRequestsPerDay ?? '';
+                if (form.elements['security.rateLimit.suspendDuration']) form.elements['security.rateLimit.suspendDuration'].value = json.security.rateLimit.suspendDuration ?? '';
+            }
         }
     } catch (error) {
         showToast('加载配置失败: ' + error.message, 'error');
@@ -631,7 +637,7 @@ document.getElementById('configForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const allConfig = Object.fromEntries(formData);
-    
+
     // 分离敏感和非敏感配置
     const sensitiveKeys = ['API_KEY', 'ADMIN_USERNAME', 'ADMIN_PASSWORD', 'JWT_SECRET', 'PROXY', 'SYSTEM_INSTRUCTION', 'IMAGE_BASE_URL'];
     const envConfig = {};
@@ -639,9 +645,12 @@ document.getElementById('configForm').addEventListener('submit', async (e) => {
         server: {},
         api: {},
         defaults: {},
-        other: {}
+        api: {},
+        defaults: {},
+        other: {},
+        security: { rateLimit: {} }
     };
-    
+
     Object.entries(allConfig).forEach(([key, value]) => {
         if (sensitiveKeys.includes(key)) {
             envConfig[key] = value;
@@ -663,10 +672,17 @@ document.getElementById('configForm').addEventListener('submit', async (e) => {
             else if (key === 'TIMEOUT') jsonConfig.other.timeout = parseInt(value);
             else if (key === 'MAX_IMAGES') jsonConfig.other.maxImages = parseInt(value);
             else if (key === 'SKIP_PROJECT_ID_FETCH') jsonConfig.other.skipProjectIdFetch = value === 'true';
+
+            // 限流配置映射
+            else if (key === 'security.rateLimit.enabled') jsonConfig.security.rateLimit.enabled = value === 'true';
+            else if (key === 'security.rateLimit.maxRequestsPerMinute') jsonConfig.security.rateLimit.maxRequestsPerMinute = parseInt(value);
+            else if (key === 'security.rateLimit.maxRequestsPerDay') jsonConfig.security.rateLimit.maxRequestsPerDay = parseInt(value);
+            else if (key === 'security.rateLimit.suspendDuration') jsonConfig.security.rateLimit.suspendDuration = parseInt(value);
+
             else envConfig[key] = value;
         }
     });
-    
+
     showLoading('正在保存配置...');
     try {
         const response = await authFetch('/admin/config', {
@@ -677,7 +693,7 @@ document.getElementById('configForm').addEventListener('submit', async (e) => {
             },
             body: JSON.stringify({ env: envConfig, json: jsonConfig })
         });
-        
+
         const data = await response.json();
         hideLoading();
         if (data.success) {
