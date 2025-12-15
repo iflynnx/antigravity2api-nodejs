@@ -257,10 +257,11 @@ export async function getModelsWithQuotas(token) {
 
   try {
     let data;
+    const body = { project: token.projectId || '' };
     if (useAxios) {
-      data = (await axios(buildAxiosConfig(config.api.modelsUrl, headers, {}))).data;
+      data = (await axios(buildAxiosConfig(config.api.modelsUrl, headers, body))).data;
     } else {
-      const response = await requester.antigravity_fetch(config.api.modelsUrl, buildRequesterConfig(headers, {}));
+      const response = await requester.antigravity_fetch(config.api.modelsUrl, buildRequesterConfig(headers, body));
       if (response.status !== 200) {
         const errorBody = await response.text();
         throw { status: response.status, message: errorBody };
@@ -272,7 +273,7 @@ export async function getModelsWithQuotas(token) {
     Object.entries(data.models || {}).forEach(([modelId, modelData]) => {
       if (modelData.quotaInfo) {
         quotas[modelId] = {
-          r: modelData.quotaInfo.remainingFraction,
+          r: modelData.quotaInfo.remainingFraction || 0,
           t: modelData.quotaInfo.resetTime
         };
       }

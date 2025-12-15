@@ -23,7 +23,7 @@ const router = express.Router();
 // 登录接口
 router.post('/login', (req, res) => {
   const { username, password } = req.body;
-  
+
   if (username === config.admin.username && password === config.admin.password) {
     const token = generateToken({ username, role: 'admin' });
     res.json({ success: true, token });
@@ -48,7 +48,7 @@ router.post('/tokens', authMiddleware, (req, res) => {
   if (enable !== undefined) tokenData.enable = enable;
   if (projectId) tokenData.projectId = projectId;
   if (email) tokenData.email = email;
-  
+
   const result = tokenManager.addToken(tokenData);
   res.json(result);
 });
@@ -81,7 +81,7 @@ router.post('/oauth/exchange', authMiddleware, async (req, res) => {
   if (!code || !port) {
     return res.status(400).json({ success: false, message: 'code和port必填' });
   }
-  
+
   try {
     const postData = new URLSearchParams({
       code,
@@ -90,19 +90,19 @@ router.post('/oauth/exchange', authMiddleware, async (req, res) => {
       redirect_uri: `http://localhost:${port}/oauth-callback`,
       grant_type: 'authorization_code'
     });
-    
+
     const response = await fetch(OAUTH_CONFIG.TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: postData.toString()
     });
-    
+
     const tokenData = await response.json();
-    
+
     if (!tokenData.access_token) {
       return res.status(400).json({ success: false, message: 'Token交换失败' });
     }
-    
+
     const account = {
       access_token: tokenData.access_token,
       refresh_token: tokenData.refresh_token,
@@ -110,7 +110,7 @@ router.post('/oauth/exchange', authMiddleware, async (req, res) => {
       timestamp: Date.now(),
       enable: true
     };
-    
+
     try {
       const emailResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
         headers: {
@@ -128,7 +128,7 @@ router.post('/oauth/exchange', authMiddleware, async (req, res) => {
     } catch (err) {
       logger.warn('获取用户邮箱失败:', err.message);
     }
-    
+
     if (config.skipProjectIdFetch) {
       account.projectId = generateProjectId();
       logger.info('使用随机生成的projectId: ' + account.projectId);
@@ -145,7 +145,7 @@ router.post('/oauth/exchange', authMiddleware, async (req, res) => {
         return res.status(500).json({ success: false, message: '验证账号资格失败: ' + error.message });
       }
     }
-    
+
     res.json({ success: true, data: account });
   } catch (error) {
     logger.error('Token交换失败:', error.message);
@@ -169,20 +169,20 @@ router.get('/config', authMiddleware, (req, res) => {
 router.put('/config', authMiddleware, (req, res) => {
   try {
     const { env: envUpdates, json: jsonUpdates } = req.body;
-    
+
     if (envUpdates) {
       updateEnvFile(envPath, envUpdates);
     }
-    
+
     if (jsonUpdates) {
       const currentConfig = getConfigJson();
       const mergedConfig = deepMerge(currentConfig, jsonUpdates);
       saveConfigJson(mergedConfig);
     }
-    
+
     dotenv.config({ override: true });
     reloadConfig();
-    
+
     logger.info('配置已更新并热重载');
     res.json({ success: true, message: '配置已保存并生效（端口/HOST修改需重启）' });
   } catch (error) {
@@ -198,11 +198,11 @@ router.get('/tokens/:refreshToken/quotas', authMiddleware, async (req, res) => {
     const forceRefresh = req.query.refresh === 'true';
     const tokens = tokenManager.getTokenList();
     let tokenData = tokens.find(t => t.refresh_token === refreshToken);
-    
+
     if (!tokenData) {
       return res.status(404).json({ success: false, message: 'Token不存在' });
     }
-    
+
     // 检查token是否过期，如果过期则刷新
     if (tokenManager.isExpired(tokenData)) {
       try {
@@ -212,18 +212,18 @@ router.get('/tokens/:refreshToken/quotas', authMiddleware, async (req, res) => {
         return res.status(401).json({ success: false, message: 'Token已过期且刷新失败' });
       }
     }
-    
+
     // 先从缓存获取（除非强制刷新）
     let quotaData = forceRefresh ? null : quotaManager.getQuota(refreshToken);
-    
+
     if (!quotaData) {
       // 缓存未命中或强制刷新，从API获取
-      const token = { access_token: tokenData.access_token, refresh_token: refreshToken };
+      const token = { access_token: tokenData.access_token, refresh_token: refreshToken, projectId: tokenData.projectId };
       const quotas = await getModelsWithQuotas(token);
       quotaManager.updateQuota(refreshToken, quotas);
       quotaData = { lastUpdated: Date.now(), models: quotas };
     }
-    
+
     // 转换时间为北京时间
     const modelsWithBeijingTime = {};
     Object.entries(quotaData.models).forEach(([modelId, quota]) => {
@@ -233,13 +233,13 @@ router.get('/tokens/:refreshToken/quotas', authMiddleware, async (req, res) => {
         resetTimeRaw: quota.t
       };
     });
-    
-    res.json({ 
-      success: true, 
-      data: { 
+
+    res.json({
+      success: true,
+      data: {
         lastUpdated: quotaData.lastUpdated,
-        models: modelsWithBeijingTime 
-      } 
+        models: modelsWithBeijingTime
+      }
     });
   } catch (error) {
     logger.error('获取额度失败:', error.message);
