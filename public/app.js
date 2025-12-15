@@ -355,12 +355,30 @@ function renderTokens(tokens) {
         return;
     }
 
-    tokenList.innerHTML = tokens.map(token => `
-        <div class="token-card">
+    tokenList.innerHTML = tokens.map(token => {
+        const isSuspended = token.suspend_until && token.suspend_until > Date.now();
+        let statusHtml = '';
+        let suspendInfoHtml = '';
+
+        if (isSuspended) {
+            statusHtml = `<span class="status suspended">❄️ 冷冻中</span>`;
+            const remaining = Math.ceil((token.suspend_until - Date.now()) / 60000); // minutes
+            suspendInfoHtml = `
+                <div class="info-row" style="color: var(--warning);">
+                    <span class="info-label">❄️ 解冻</span>
+                    <span class="info-value">${remaining} 分钟后 (${new Date(token.suspend_until).toLocaleTimeString()})</span>
+                </div>
+            `;
+        } else if (token.enable) {
+            statusHtml = `<span class="status enabled">✅ 启用</span>`;
+        } else {
+            statusHtml = `<span class="status disabled">❌ 禁用</span>`;
+        }
+
+        return `
+        <div class="token-card" style="${isSuspended ? 'border-color: var(--warning);' : ''}">
             <div class="token-header">
-                <span class="status ${token.enable ? 'enabled' : 'disabled'}">
-                    ${token.enable ? '✅ 启用' : '❌ 禁用'}
-                </span>
+                ${statusHtml}
                 <span class="token-id">#${token.refresh_token.substring(0, 8)}</span>
             </div>
             <div class="token-info">
@@ -380,6 +398,7 @@ function renderTokens(tokens) {
                     <span class="info-label">⏰ 过期</span>
                     <span class="info-value">${new Date(token.timestamp + token.expires_in * 1000).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
+                ${suspendInfoHtml}
             </div>
             <div class="token-actions">
                 <button class="btn btn-info" onclick="showQuotaModal('${token.refresh_token}')">📊 查看额度</button>
@@ -389,7 +408,7 @@ function renderTokens(tokens) {
                 <button class="btn btn-danger" onclick="deleteToken('${token.refresh_token}')">🗑️ 删除</button>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 async function toggleToken(refreshToken, enable) {

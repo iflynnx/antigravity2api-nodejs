@@ -347,7 +347,8 @@ class TokenManager {
         timestamp: token.timestamp,
         enable: token.enable !== false,
         projectId: token.projectId || null,
-        email: token.email || null
+        email: token.email || null,
+        suspend_until: token.suspend_until || 0
       }));
     } catch (error) {
       log.error('获取Token列表失败:', error.message);
